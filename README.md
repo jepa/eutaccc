@@ -5,7 +5,7 @@ This repository is intended to support the project *Changes in the EU fisheries 
 
 # Authors 
 
-Alex Tidd, <sup>1</sup> Elena Ojea <sup>1</sup> & Juliano Palacios-Abrantes<sup>2</sup>, 
+Elena Ojea <sup>1</sup>, Alex Tidd <sup>1</sup> & Juliano Palacios-Abrantes<sup>2</sup>, 
 
 1. Future Oceans Lab, Universidad de Vigo, Vigo, Spain
 
