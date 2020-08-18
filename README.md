@@ -17,9 +17,9 @@ In this repository you will find all of the code related to the project. **Note*
 
 ### Folders
 
-- **data**: Folder where processed data is stored. Data folder is sub-divided in `spatial`; everything related to spatial analysis (e.g. shapefiles),`tacs`; everything related to ICES and EU tac system (e.g. current TAC allocation), `species`; data related to the specific species analyzed, `dbem`; processed outputs from the DBEM model.
+- **data (external)**: Folder where processed data is stored. Data folder is sub-divided in `spatial`; everything related to spatial analysis (e.g. shapefiles),`tacs`; everything related to ICES and EU tac system (e.g. current TAC allocation), `species`; data related to the specific species analyzed, `dbem`; processed outputs from the DBEM model.
 
-**Note:** Note that some data will not be located here as it exceeds GitHub's size cap
+**Note:**  Data will not be located here as it exceeds GitHub's size cap
 
 
 - **figures**: Contains the *Exploratory* and *Selected* project figures (Part of *Results*)
