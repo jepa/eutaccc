@@ -1,0 +1,182 @@
+---
+title: "Climate change will outdate the European Union fishereis quota allocation"
+author: "Alex Tidd, <sup>1</sup> Elena Ojea <sup>1</sup>, Juliano Palacios-Abrantes<sup>2</sup>, William W. L. Cheung ?, U. Rashid Sumaila ?"
+date: `r date()`
+output: html_document
+---
+
+```{r setup, include=FALSE, results = 'hide'}
+
+#### READ ME !!! ####
+library(MyFunctions)
+
+#### Library ####
+packages <- c(
+  # "readxl", # Read dataframe
+  # "data.table", # Read dataframe (Fast!)
+  # "wesanderson",
+  "tidyverse", # for all data wrangling and ggplot
+  "here",
+  "janitor",#, # for data cleaning
+  # "tidytext", # to order the facet wrap https://juliasilge.com/blog/reorder-within/
+  # "cowplot", # for figures 1 and 3
+  # "ggimage", #for reading images to the circular plot
+  # "ggrepel", # for nice plot labels
+  # "ggsflabel", # for nice sf_plots labels
+  # "spdep", # for poly2nb old
+  "sf", #Spatial analysis
+  "sp", #Spatial analysis
+  # "purrr",#Spatial analysis
+  # "rgdal", #Spatial analysis
+  "tools" #Spatial analysis
+  # "parallel", # for parallelization
+  # "taxize", # For getting species names
+  # "rfishbase", # for species ecosystem affinity
+  # "zoo", #for runing mean
+  # "pgirmess" # for dune test after kurtis wallas
+)
+
+my_lib(packages)
+
+data_path <- "../data"
+```
+
+# Methods
+
+## Species selection
+
+In here we take the EU list of species and filter out those that we have data for to project under climate change.
+
+Our analysis included 79.48% (n = 62) of the taxa reported at the species level by the European Union (n = 78).
+
+```{r species_selection, eval = F, echo = F}
+
+# -------------------- #
+# Data needed
+# -------------------- #
+
+# Load EU species list
+Eu_spp_list <- read.csv(here("data/species/eu_species.csv")) %>% 
+  clean_names() %>% 
+  rename(taxon_name = scientific_name) %>% 
+  select(-common_name)
+
+# Load SAU species list
+Sau_spp_list <- read.csv(here("data/species/exploited_species_list.csv")) %>% 
+  clean_names()
+
+# -------------------- #
+# Get Speicies lists
+# -------------------- #
+
+# Get species list to analyze (n = 62)
+Project_spp <- eu_spp_list %>% 
+  left_join(Sau_spp_list,
+            by = "taxon_name") %>% 
+  filter(!is.na(taxon_key))
+
+# Save data for future
+write_csv(Project_spp,
+          "../data/species/species_analyzed.csv")
+
+
+# Who was left out (n = 29)
+Left_out_spp <- eu_spp_list %>% 
+  anti_join(Project_spp,
+            by = "taxon_name")
+
+# Geenral categories (n = 13)
+Left_out_spp %>% 
+  filter(str_detect(taxon_name,"sp")) %>% 
+  pull(taxon_name)
+
+
+# Species left out (n = 16)
+Left_out_spp %>% 
+  filter(!str_detect(taxon_name,"sp")) %>% 
+  pull(taxon_name)
+
+# Numbers for methods
+
+62/91*100 # 68.13 % of the taxon reported
+62/(91-13)*100 # 79.49 % of the taxon reported at the species level
+
+
+
+
+```
+
+## Crop out europeanregion
+
+In the following analysis we will crop out the EU region to a 0.5 x 0.5 grid
+
+### Data for spatial
+```{r spatial_data_crop, eval = F, echo = F}
+
+## EU Shapefile
+
+# The path
+Eu_path <- paste(data_path,"/spatial/ices_areas",sep="")
+
+# The File
+Eu_file <- "ICES_Areas_20160601_dense.shp"
+
+# Load it!
+Eu_shp <- st_read(dsn = Eu_path,
+                  layer =file_path_sans_ext(Eu_file)
+                  )
+
+# SAU/DBEM Gridcell
+Eez_cell_id <- my_path("G","Spatial/DBEM/","EEZ_CellID.csv", read = T)
+
+# Load Gridcell
+Lon_lat_grid <- my_path("G", "Spatial/DBEM","Lon_Lat_DBEM.txt", read = T, header = F)
+colnames(Lon_lat_grid) <- c("index","lon","lat")
+
+```
+
+### Spatial croping
+
+```{r species_selection, eval = F, echo = F}
+
+# Convert DBEM gridcell to sf
+Grid_sf = st_as_sf(Lon_lat_grid,
+            coords = c("lon", "lat")
+            ) %>% 
+ st_set_crs(4326) %>% # to match shapefiles
+ st_transform(4326) # to match shapefiles
+
+head(Grid_sf)
+
+# Merge grid sf and EU sf
+Eu_grid <- st_join(Eu_shp,
+                         Grid_sf, join = st_contains) %>% 
+ filter(!is.na(index)) %>%
+ arrange(index) 
+
+# Merged correctly?
+head(Eu_grid)
+
+# Transform sf to df
+Eu_grid_df <- as.data.frame(Eu_grid) %>% 
+ select(index,OBJECTID:SubDivisio)
+
+
+# Double check grid makes sence
+Eu_grid_df %>% 
+  left_join(Lon_lat_grid) %>% 
+  ggplot() +
+  geom_tile(aes(
+    x = lon,
+    y = lat,
+    fill = as.factor(Division),
+    color = as.factor(Division)
+  )
+  )
+
+# Save data
+write_csv(Eu_grid_df,
+          "eu_grid.csv")
+
+
+```

@@ -1,0 +1,19 @@
+---
+title: "Climate change will outdate the European Union fishereis quota allocation"
+subtitle: "Research proposal"
+author: "Elena Ojea, Alex Tidd, Juliano Palacios Abrantes, William W.L. Cheung?, U.Rashid Sumaila?"
+date: "17/04/2020"
+output: word_document
+---
+
+# Abstract
+
+Climate change if shifting the distribution of marine fished species threatening the management and conservation of fish stocks worldwide. This is a particular issue for species that are shared over multiple marine jurisdictions as management rules are often based on historic distributions. This is the case of the European Union (EU) Allocation Policy Act (APA). Through this act, the EU allocates fishing quotas for XXX species among all X members along XX regulatory areas within the EU’s economic exclusive zone (EEZ). Such quota allocation is based on the historic capture of each country in each region and species up to 1970. Thus, as climate change shifts the distribution of marine species that historic distribution will likely be out-dating threatening the sustainability of European stocks. In this paper we rely on a quantitative modeling approach to estimate the degree by which European stocks are shifting within regulatory areas of the EU-EEZ. Specifically, we project the maximum catch potential of XXX European stocks within the multiple EU management regions under a high emission climate change scenario and compare future distributions to that of the APA reference years. Using multiple ensemble members, we estimate the year when such stocks are likely to change, providing key information for policy adaptation under climate change. 
+
+# References
+
+Baudron, A. R., Brunel, T., Blanchet, M. A., Hidalgo, M., Chust, G., Brown, E. J., et al. (2020). Changing fish distributions challenge the effective management of European fisheries. Ecography, 43, 1. http://doi.org/10.1111/ecog.04864
+
+Cheung, W. W. L., Jones, M. C., Reygondeau, G., Stock, C. A., Lam, V. W. Y., & Frölicher, T. L. (2016). Structural uncertainty in projecting global fisheries catches under climate change. Ecological Modelling, 325, 57–66. http://doi.org/10.1016/j.ecolmodel.2015.12.018
+
+Rodgers, K. B., Lin, J., & Frölicher, T. L. (2015). Emergence of multiple ocean ecosystem drivers in a large ensemble suite with an Earth system model. Biogeosciences, 12(11), 3301–3320. http://doi.org/10.5194/bg-12-3301-2015
