@@ -53,3 +53,8 @@ In this repository you will find all of the code related to the project. **Note*
 - Identify yourself with initials (e.g. `#JEPA`) in parts of the script when modifying it
 -Use `<-` to name variables not `=`
 - Keep all functions and variables names with first capital and then low caps and underscores (e.g. `tac_future <- function()`), this is to differentiate from variables within tables)
+
+
+## Shiny app
+
+https://clock-espana.shinyapps.io/EUTAC/ 
