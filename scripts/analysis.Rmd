@@ -39,6 +39,9 @@ packages <- c(
 
 my_lib(packages)
 
+# Fix new updates of sf package
+sf::sf_use_s2(use_s2 = FALSE)
+
 # data_path <- "../data"
 data_path <- my_path("D")
 ```
@@ -52,20 +55,27 @@ In here we take the EU list of species and filter out those that we have data fo
 Our analysis included 79.48% (n = 62) of the taxa reported at the species level by the European Union (n = 78).
 
 ```{r species_selection, eval = F, echo = F}
-
 # -------------------- #
 # Data needed
 # -------------------- #
+
+# Load TAC species list
+Tac_spp_list <- my_path("D","Tacs", name = "eu_tacs_2020_lookup.csv", read = T) %>% 
+# Eu_spp_list <- read.csv(here("data/species/eu_species.csv")) %>% 
+  clean_names() %>% 
+  rename(taxon_name = scientific_name) %>% 
+  select(-common_name)
 
 # Load EU species list
 Eu_spp_list <- my_path("D","Species", name = "eu_species.csv", read = T) %>% 
 # Eu_spp_list <- read.csv(here("data/species/eu_species.csv")) %>% 
   clean_names() %>% 
   rename(taxon_name = scientific_name) %>% 
-  select(-common_name)
+  select(-common_name) %>% 
+  filter(alpha_3_code %in% Tac_spp_list$species)
 
 # Load SAU species list
-Sau_spp_list <- my_path("D","Species", name = "exploited_species_list.csv", read = T) %>% 
+Sau_spp_list <- my_path("G","SAU", name = "exploited_species_list.csv", read = T) %>% 
 # Sau_spp_list <- read.csv(here("data/species/exploited_species_list.csv")) %>% 
   clean_names()
 
@@ -79,36 +89,25 @@ Project_spp <- Eu_spp_list %>%
             by = "taxon_name") %>% 
   filter(!is.na(taxon_key))
 
+# Percentage of total taxa
+nrow(Project_spp)/nrow(Eu_spp_list)*100 # 80% of the taxon reported
+
 # Save data for future
-# write_csv(Project_spp,
-#           "../data/species/species_analyzed.csv")
+write_csv(Project_spp,
+          my_path("D","Species","species_analyzed.csv"))
 
+Project_spp
+```
 
-# Who was left out (n = 29)
-Left_out_spp <- Eu_spp_list %>% 
+### Who was left out (n = 6)
+
+```{r species_selection, eval = F, echo = F}
+
+Eu_spp_list %>% 
   anti_join(Project_spp,
             by = "taxon_name")
-
-# General categories (n = 13)
-Left_out_spp %>% 
-  filter(str_detect(taxon_name,"sp")) %>% 
-  pull(taxon_name)
-
-
-# Species left out (n = 16)
-Left_out_spp %>% 
-  filter(!str_detect(taxon_name,"sp")) %>% 
-  pull(taxon_name)
-
-# Numbers for methods
-
-62/91*100 # 68.13 % of the taxon reported
-62/(91-13)*100 # 79.49 % of the taxon reported at the species level
-
-
-kable(Project_spp)
-
 ```
+
 
 ## Spatial analysis
 
@@ -117,11 +116,27 @@ kable(Project_spp)
 In the following analysis we will crop out the EU region to a 0.5 x 0.5 grid
 
 ### Data for spatial
+
+#### shapefiles
+
+- **EU shaopefile.** This shapefile covers the EU ICES areas. It was provided by Elena
+
+- **North Africa shapefile** This shapefile covers the Morocco Coastal (Division 34.1.1 of FAO Major Area 34) and its breakdown. It was provided by FAO. http://www.fao.org/fishery/geonetwork/srv/eng/catalog.search#/metadata/fao-fsa-nested-map-34.1.1
+
 ```{r spatial_data_crop, eval = F, echo = F}
 
 ## EU Shapefile
 
-Eu_shp <- st_read(my_path("D","Spatial/ices_areas","ICES_Areas_20160601_dense.shp"))
+Eu_shp <- st_read(my_path("D","Spatial/ices_areas","ICES_Areas_20160601_dense.shp")) %>% 
+  st_simplify(preserveTopology = TRUE, dTolerance = 0.01) %>% 
+  clean_names() %>% 
+  select(sub_area,division,sub_division = sub_divisio,geometry)
+
+# eu_map <- ggplot(Eu_shp) +
+  # geom_sf(aes(fill = as.character(sub_area)))
+
+# ggsave(my_path("D","Spatial/ices_areas","eu_map.png"),
+       # eu_map)
 
 # SAU/DBEM Gridcell
 Eez_cell_id <- my_path("G","Spatial/DBEM/","EEZ_CellID.csv", read = T)
@@ -130,7 +145,43 @@ Eez_cell_id <- my_path("G","Spatial/DBEM/","EEZ_CellID.csv", read = T)
 Lon_lat_grid <- my_path("G", "Spatial/DBEM","Lon_Lat_DBEM.txt", read = T, header = F)
 colnames(Lon_lat_grid) <- c("index","lon","lat")
 
+
+## North Africa Shapefile
+
+na_shp <- st_read(my_path("D","Spatial/FSA-NESTED_34-1-1","FSA-NESTED_34-1-1.shp")) %>% 
+  st_simplify(preserveTopology = TRUE, dTolerance = 0.01) %>% 
+  select(sub_area = F_SUBAREA,division = F_AREA,sub_division = F_SUBDIVIS,geometry)
+
+# na_map <- ggplot(na_shp) +
+#   geom_sf(aes(fill = as.character(ID)))
+
+ 
+# ggsave(my_path("D","Spatial/FSA-NESTED_34-1-1","na_map.png"),
+#        na_map)
+
 ```
+
+#### Combine shapefiles
+
+
+```{r north_africa_sf, eval = F, echo = F}
+
+
+complete_map <- rbind(na_shp,Eu_shp)
+
+write_sf(complete_map, my_path("D","Spatial/project_sf","project_sf.shp"))
+
+reg_map <- ggplot() +
+  geom_sf(data = complete_map, aes(fill = sub_area)) #+
+  # geom_sf(data = na_shp, aes())
+
+
+# ggsave(my_path("D","Spatial","reg_map.png"),
+#        reg_map)
+
+
+```
+
 
 ### Spatial croping
 
@@ -143,10 +194,10 @@ Grid_sf = st_as_sf(Lon_lat_grid,
  st_set_crs(4326) %>% # to match shapefiles
  st_transform(4326) # to match shapefiles
 
-head(Grid_sf)
+# head(Grid_sf)
 
 # Merge grid sf and EU sf
-Eu_grid <- Eu_shp %>% 
+Eu_grid <- complete_map %>% 
   st_join(Grid_sf, join = st_contains) %>% 
  filter(!is.na(index)) %>%
  arrange(index) 
@@ -156,7 +207,7 @@ Eu_grid <- Eu_shp %>%
 
 # Transform sf to df
 Eu_grid_df <- as.data.frame(Eu_grid) %>% 
- select(index,OBJECTID:SubDivisio)
+ select(index,sub_area:sub_division)
 
 
 # Double check grid makes sense
@@ -166,14 +217,15 @@ Eu_grid_df %>%
   geom_tile(aes(
     x = lon,
     y = lat,
-    fill = as.factor(Division),
-    color = as.factor(Division)
+    fill = as.factor(sub_area),
+    color = as.factor(sub_area)
   )
   )
 
+
 # Save data
-# write_csv(Eu_grid_df,
-#           "eu_grid.csv")
+write_csv(Eu_grid_df,
+          my_path("D","Spatial","eu_grid.csv"))
 
 ### TO show in notebook
 
@@ -192,7 +244,7 @@ my_path("D","Spatial","eu_grid.csv", read = T) %>%
 ```
 
 
-## Computing analysis
+## Potential Results
 
 Right now doing analysis at the species level
 
@@ -206,9 +258,10 @@ eu_grid <- my_path("D","Spatial","eu_grid.csv", read = T)
 read_dbem <- function(taxon){
   
   file_name <- paste0(taxon,"MCP.RData")
-  read_me <- my_path("G","DBEM/C6GFDL85F1_5_t2", name = file_name)
+  read_me <- my_path("G","cimip6/DBEM_outputs/C6GFDL85F1_5_t2", name = file_name)
   
   if(file.exists(read_me) == F){
+    print("no data for that spp. Bruh!")
     data <- data.frame()
   }else{
     
@@ -221,7 +274,11 @@ read_dbem <- function(taxon){
       rowid_to_column("index") %>% 
       gather("year","mcp",2:151) %>% 
       mutate(taxon = taxon) %>% 
-      filter(index %in% eu_grid$index)
+      # filter(index %in% eu_grid$index) %>% 
+      left_join(eu_grid) %>% 
+      group_by(division,year,taxon) %>% 
+      summarise(div_mcp = sum(mcp, na.rm= T),
+                .groups = "drop")
   }
   
   return(data)
@@ -231,22 +288,48 @@ read_dbem <- function(taxon){
 ```
 
 
-### Estimate changes
-
-#### Temporal changes
+#### Load data
 
 ```{r}
 
-spp_data <- read_dbem(taxon = Project_spp$taxon_key[1])
+# Species list
+project_spp <- my_path("D","Species","species_analyzed.csv", read = T)
+
+# DBEM results for one spp
+# spp_data <- read_dbem(taxon = project_spp$taxon_key[1])
+
+# DBEM results for multiple spp
+spp_data <- bind_rows(
+  lapply(project_spp$taxon_key, read_dbem)
+)
+
+# 18 million
+
+# Lon lat DBEM
+Lon_lat_grid <- my_path("G", "Spatial/DBEM","Lon_Lat_DBEM.txt", read = T, header = F)
+colnames(Lon_lat_grid) <- c("index","lon","lat")
+
+# Load project's sf
+project_shp <- st_read(my_path("D","Spatial/project_sf","project_sf.shp")) %>% 
+  rename(division = divisin)
+
+```
+
+
+#### Change Relative to present
+
+In this part we estimate the change by mid and end of the century in the region relative to the present day
+
+```{r temporal_cahnge, eval = T, echo = F}
+
   
-  
-dt <- spp_data %>%
-  left_join(eu_grid) %>% 
-  group_by(division,year,taxon) %>% 
-  summarise(div_mcp = sum(mcp, na.rm= T)) %>% 
+temporal_df <- spp_data %>%
+  # left_join(eu_grid) %>%
+  # group_by(division,year,taxon) %>% 
+  # summarise(div_mcp = sum(mcp, na.rm= T)) %>% 
   mutate(
-    period = ifelse(year %in% seq(1951,2000,1),"A_early",
-                    ifelse(year %in% seq(2040,2060,1),"AA_med",
+    period = ifelse(year %in% seq(1973,1978,1),"A_early",
+                    ifelse(year %in% seq(2020,2040,1),"AA_med",
                            ifelse(year %in% seq(2080,2100,1),"AAA_end",
                                   NA
                            )
@@ -259,48 +342,186 @@ dt <- spp_data %>%
   spread(period,mean_mcp) %>% 
   gather("future","mcp",AA_med:AAA_end) %>% 
   mutate(per_chg = ifelse(A_early == 0 & mcp == 0, 0, # If for no change than 0
-                        ifelse(A_early == 0 & mcp > 0, 100, # If changes from 0 to anything then 100
-                               # NA
-                               ((mcp-A_early)/((mcp+A_early)/2))*100 # Estimate percentage change
-                        )
-            ),
-         plot_per_change = ifelse(per_chg > 100,100,
-                                  ifelse(per_chg < -100,-100,
+                          ifelse(A_early == 0 & mcp > 0, 100, # If changes from 0 to anything then 100
+                                 # NA
+                                 ((mcp-A_early)/((mcp+A_early)/2))*100 # Estimate percentage change
+                          )
+  ),
+  plot_per_change = ifelse(per_chg > 100,100,
+                           ifelse(per_chg < -100,-100,
                                   per_chg)
-         )
-         )
+  )
+  )
+  
 
-
-head(dt,20) %>% 
-kable()
+head(temporal_df,20)
 
 ```
+
+```{r}
+
+temp_map <- project_shp %>% 
+  left_join(temporal_df) %>% 
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = plot_per_change
+    )
+  ) +
+  facet_wrap(~future, nrow = 1)+
+  scale_fill_gradient2() +
+  scale_color_gradient2()
+
+
+ggsave(my_path("R","partial","temporal_map.png"),
+       temp_map,
+       width = 12)
+
+```
+
 
 #### Regional Estimations
 
 ```{r}
 
-spp_data
-
 total_spp <- spp_data %>% 
+  filter(!is.na(division)) %>% 
   group_by(year,taxon) %>% 
-  summarise(total_mcp = sum(mcp,na.rm=T))
+  summarise(total_mcp = sum(div_mcp,na.rm=T))
   
   
-dt <- spp_data %>%
-  left_join(eu_grid) %>% 
-  group_by(year,taxon,division) %>% 
-  summarise(div_mcp = sum(mcp, na.rm= T)) %>% 
-  left_join(total_spp) %>% 
+regional_df <- spp_data %>%
+  filter(!is.na(division)) %>% 
+  left_join(total_spp,
+            by = c("year","taxon")
+            ) %>% 
   mutate(
     per = (div_mcp/total_mcp)*100
+  )
+
+
+head(regional_df,20)
+
+```
+
+### Historical trends
+
+```{r}
+
+ggplot(regional_df) +
+  geom_line(
+    aes(
+      x = as.numeric(year),
+      y = per,
+      color = division
+      )
+  ) +
+  geom_vline(xintercept = 1973) +
+  facet_wrap(~taxon,
+             ncol = 3)
+
+
+ggplot(regional_df) +
+  geom_area(
+    aes(
+      x = as.numeric(year),
+      y = per,
+      fill = division
+      )
+  ) +
+  geom_vline(xintercept = 1973) +
+  facet_wrap(~taxon,
+             ncol = 3)
+
+```
+
+### Relative change
+
+
+```{r changeline, eval = T, echo = F}
+
+reference <- regional_df %>% 
+  filter(year >= 1973 & year <= 1978) %>% 
+  group_by(division,taxon) %>% 
+  summarise(ref_mcp = mean(per,na.rm = T))
+
+
+relative_chng <- regional_df %>% 
+  filter(year >= 1978) %>% 
+  left_join(reference) %>% 
+  mutate(per_chg = ifelse(per == 0 & ref_mcp == 0, 0, # If for no change than 0
+                        ifelse(per == 0 & ref_mcp > 0, 1, # If changes from 0 to anything then 100
+                               # NA
+                               per/ref_mcp
+                        )
+            )
+  )
+
+
+p <- ggplot(relative_chng) +
+  geom_line(
+    aes(
+      x = as.numeric(year),
+      y = per_chg,
+      color = division
+      )
+  ) +
+  geom_hline(yintercept = 1) +
+  facet_wrap(~taxon,
+             ncol = 3,
+             scales = "free")
+
+
+# plotly::ggplotly(p)
+
+p
+```
+
+### Relative change (Run 10)
+
+```{r}
+
+relative_chng <- regional_df %>% 
+  filter(year >= 1978) %>% 
+  left_join(reference) %>% 
+  mutate(per_chg = ifelse(per == 0 & ref_mcp == 0, 0, # If for no change than 0
+                        ifelse(per == 0 & ref_mcp > 0, 1, # If changes from 0 to anything then 100
+                               # NA
+                               per/ref_mcp
+                        )
+            )
   ) %>% 
- # checking
-  # group_by(year) %>% 
-  # summarise(sum(per))
+  group_by(division,taxon) %>% 
+  mutate(RMean = zoo::rollmean(x = per_chg, 
+                            10,
+                            fill = "left",
+                            na.rm=T)
+    )
+
+
+ggplot(relative_chng) +
+  geom_line(
+    aes(
+      x = as.numeric(year),
+      y = RMean,
+      color = division
+      )
+  ) +
+  geom_hline(yintercept = 1) +
+  facet_wrap(~taxon,
+             ncol = 3,
+             scales = "free")
+
+```
+
+### Relative Map per period
+
+```{r regional_map, eval = T, echo = F}
+
+relative <- regional_df %>% 
   mutate(
-    period = ifelse(year %in% seq(1951,2000,1),"A_early",
-                    ifelse(year %in% seq(2040,2060,1),"AA_med",
+    period = ifelse(year %in% seq(1973,1978,1),"A_ref",
+      ifelse(year %in% seq(2020,2040,1),"AA_med",
                            ifelse(year %in% seq(2080,2100,1),"AAA_end",
                                   NA
                            )
@@ -308,55 +529,110 @@ dt <- spp_data %>%
     )
   ) %>% 
   filter(!is.na(period)) %>% 
-  group_by(division,taxon, period) %>% 
+  group_by(division, period,taxon) %>% 
+  summarise(per_mcp = mean(per,na.rm = T))
+
+
+reg_map <- project_shp %>% 
+  left_join(relative) %>% 
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = per_mcp
+    )
+  ) +
+  facet_wrap(~taxon+period,
+             ncol = 9) +
+  viridis::scale_fill_viridis() 
+
+ggsave(my_path("R","partial","regional_map_per.png"),
+       reg_map,
+       width = 12)
+
+```
+
+### Relative bar per period
+
+```{r regional_map, eval = T, echo = F}
+
+relative <- regional_df %>% 
+  mutate(
+    period = ifelse(year %in% seq(1973,1978,1),"A_ref",
+      ifelse(year %in% seq(2020,2040,1),"AA_med",
+                           ifelse(year %in% seq(2080,2100,1),"AAA_end",
+                                  NA
+                           )
+                    )
+    )
+  ) %>% 
+  filter(!is.na(period)) %>% 
+  group_by(division, period,taxon) %>% 
+  summarise(per_mcp = mean(per,na.rm = T)) %>% 
+  mutate(per_mcp = ifelse(per_mcp > 50,50,per_mcp))
+
+
+relative %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = division,
+      y = per_mcp,
+      fill = per_mcp
+    ),
+    stat = "identity"
+  ) +
+  facet_wrap(~taxon+period,
+             ncol = 9) +
+  viridis::scale_fill_viridis()
+
+```
+
+### Relative change Mapping
+
+```{r regional_map, eval = T, echo = F}
+
+relative_chng <- 
+  regional_df %>% 
+  mutate(
+    period = ifelse(year %in% seq(2020,2040,1),"AA_med",
+                           ifelse(year %in% seq(2080,2100,1),"AAA_end",
+                                  NA
+                           )
+                    )
+  ) %>% 
+  filter(!is.na(period)) %>% 
+  group_by(division, period,taxon) %>% 
   summarise(mean_mcp = mean(per,na.rm = T)) %>% 
-  spread(period,mean_mcp) %>% 
-  gather("future","mcp",AA_med:AAA_end) %>% 
-  mutate(per_chg = ifelse(A_early == 0 & mcp == 0, 0, # If for no change than 0
-                        ifelse(A_early == 0 & mcp > 0, 100, # If changes from 0 to anything then 100
+  left_join(reference) %>% 
+  mutate(per_chg = ifelse(ref_mcp == 0 & mean_mcp == 0, 0, # If for no change than 0
+                        ifelse(ref_mcp == 0 & mean_mcp > 0, 100, # If changes from 0 to anything then 100
                                # NA
-                               ((mcp-A_early)/((mcp+A_early)/2))*100 # Estimate percentage change
+                               ((mean_mcp-ref_mcp)/((mean_mcp+ref_mcp)/2))*100 # Estimate percentage change
                         )
             ),
+         diff = mean_mcp/ref_mcp,
          plot_per_change = ifelse(per_chg > 100,100,
                                   ifelse(per_chg < -100,-100,
                                   per_chg)
          )
          )
 
-
-head(dt,20) %>% 
-kable()
-
-```
-
-# Results
-
-```{r}
-
-dt %>% 
-  left_join(eu_grid) %>% 
-  left_join(Lon_lat_grid) %>% 
-  ggplot() + 
-  geom_tile(
+reg_map <- project_shp %>% 
+  left_join(relative_chng) %>% 
+  ggplot() +
+  geom_sf(
     aes(
-      x = lon,
-      y = lat,
-      fill = mcp,
-      color = mcp
+      fill = plot_per_change
     )
   ) +
-  facet_wrap(~future, ncol = 1)
+  facet_wrap(~period+taxon,
+             ncol = 6) +
+  scale_fill_gradient2() +
+  scale_color_gradient2()
 
 
-# Eu_shp %>% 
-#   clean_names() %>% 
-#   left_join(dt,
-#             by = "division") %>% 
-#   ggplot() + 
-#   geom_sf(aes(fill = mcp)) +
-#   facet_wrap(~future, ncol = 1)
-
+ggsave(my_path("R","partial","regional_map_diff.png"),
+       reg_map,
+       width = 12)
 
 ```
-
