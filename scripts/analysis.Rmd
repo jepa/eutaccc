@@ -179,7 +179,6 @@ reg_map <- ggplot() +
 # ggsave(my_path("D","Spatial","reg_map.png"),
 #        reg_map)
 
-
 ```
 
 
@@ -240,7 +239,6 @@ my_path("D","Spatial","eu_grid.csv", read = T) %>%
   )
   )
 
-
 ```
 
 
@@ -248,12 +246,24 @@ my_path("D","Spatial","eu_grid.csv", read = T) %>%
 
 Right now doing analysis at the species level
 
+## Speices-area subset
+
+- Mackerel scombrus scombrus 8c_9_10_cefcaf (the north sea has been done too much and this is important for spain)
+- Anglers Lophidae ANF_7 – Anglers have high price and important on west coast
+- Hake Merluccius merluccius HKE_5b_6_7_12_14
+- Herring Clupea harengus HER_2ª_4_7D ( Pleagic on the move and important as there was a collapse in north sea in70s)
+- Melanogrammus aeglefinus Haddock HAD_6B_12_14 (UK have big interest in this)
+- Gadus morhua Cod  COD7XAD34 (codo n western side of atlantic rather thn north sea important for iireland etc..
+- Sole solea Sole SOL_2ª_4 (sole important for the dutch.. highest price in eu)
+- Anchovy ANE_8 (very important)
+
 ### Read DBEM data
 
 ```{r dbem_data, eval = T, echo = T}
 
 
-eu_grid <- my_path("D","Spatial","eu_grid.csv", read = T)
+eu_grid <- my_path("D","Spatial","eu_grid.csv", read = T) %>% 
+  distinct(index,sub_area,division,.keep_all = T)
 
 read_dbem <- function(taxon){
   
@@ -276,7 +286,8 @@ read_dbem <- function(taxon){
       mutate(taxon = taxon) %>% 
       # filter(index %in% eu_grid$index) %>% 
       left_join(eu_grid) %>% 
-      group_by(division,year,taxon) %>% 
+      filter(division == 34)
+      group_by(sub_area,division,year,taxon) %>% 
       summarise(div_mcp = sum(mcp, na.rm= T),
                 .groups = "drop")
   }
@@ -285,6 +296,8 @@ read_dbem <- function(taxon){
   
 }
 
+# taxon <- 600069
+
 ```
 
 
@@ -292,8 +305,43 @@ read_dbem <- function(taxon){
 
 ```{r}
 
+# Results exploration using these stocks
+test_stocks <-
+  data.frame(
+  taxon = c(
+    rep(600118,4), # mackrel
+    rep(600030,5), #hake HKE_5b_6_7_12_14
+    rep(600024,3), # herring HER_2ª_4_7D 
+    rep(601381,3), # hadock HAD_6B_12_14
+    rep(600069,2), # Cod COD7XAD34
+    rep(600525,2), # Solea SOL_2ª_4
+    600066 # Anchovie ANE_8
+          ),
+  sub_area = c(
+    8,9,10,34.1, #mac
+    5,6,7,12,14, #hake
+    2,4,7, # herr
+    6,12,14, #had
+    7,34.1, # Cod
+    2,4, #Sol
+    8 # ancho
+    ),
+  division_keep = c(
+    rep("8c",4), #mac
+    rep("5b",5),#hake
+    rep("7d",3), # herr
+    rep("6b",3), # had
+    c("7a","7d"), # cod NOT IN THESE AREAS
+    c(NA,NA), # sol
+    NA #ancho
+  )
+  )
+
 # Species list
-project_spp <- my_path("D","Species","species_analyzed.csv", read = T)
+project_spp <- my_path("D","Species","species_analyzed.csv", read = T) %>% 
+  filter(taxon_key %in% test_stocks$taxon)
+
+
 
 # DBEM results for one spp
 # spp_data <- read_dbem(taxon = project_spp$taxon_key[1])
@@ -313,6 +361,39 @@ colnames(Lon_lat_grid) <- c("index","lon","lat")
 project_shp <- st_read(my_path("D","Spatial/project_sf","project_sf.shp")) %>% 
   rename(division = divisin)
 
+
+# Subset data for specific stocks/regions
+stock_data <- test_stocks %>% 
+  left_join(spp_data,
+            by = c("taxon","sub_area")
+  ) %>% 
+  mutate(
+    division_b = paste0(sub_area,division),
+    keep_me = ifelse(is.na(division_keep),"yes",
+                     ifelse(taxon == 600069 & division_keep != division_b,"yes",
+                            ifelse(taxon != 600069 & division_keep == division_b,"yes",
+                                   "no")
+                     )
+    )
+  ) %>% 
+  filter(keep_me == "yes",
+         taxon != 600525) %>%
+  select(taxon:div_mcp,-division_keep)
+
+```
+
+#### Spatial summaries
+
+```{r}
+
+stock_data %>% 
+  left_join(eu_grid) %>% 
+  group_by(sub_area,division) %>% 
+  summarise(
+    n_grids = length(unique(index)),
+    km2 = n_grids*25
+  )
+
 ```
 
 
@@ -323,7 +404,7 @@ In this part we estimate the change by mid and end of the century in the region 
 ```{r temporal_cahnge, eval = T, echo = F}
 
   
-temporal_df <- spp_data %>%
+temporal_df <- stock_data %>%
   # left_join(eu_grid) %>%
   # group_by(division,year,taxon) %>% 
   # summarise(div_mcp = sum(mcp, na.rm= T)) %>% 
@@ -384,13 +465,13 @@ ggsave(my_path("R","partial","temporal_map.png"),
 
 ```{r}
 
-total_spp <- spp_data %>% 
+total_spp <- stock_data %>% 
   filter(!is.na(division)) %>% 
   group_by(year,taxon) %>% 
   summarise(total_mcp = sum(div_mcp,na.rm=T))
   
   
-regional_df <- spp_data %>%
+regional_df <- stock_data %>%
   filter(!is.na(division)) %>% 
   left_join(total_spp,
             by = c("year","taxon")
