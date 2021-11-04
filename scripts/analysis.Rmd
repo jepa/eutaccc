@@ -286,7 +286,7 @@ read_dbem <- function(taxon){
       mutate(taxon = taxon) %>% 
       # filter(index %in% eu_grid$index) %>% 
       left_join(eu_grid) %>% 
-      filter(division == 34)
+      # filter(division == 34) %>% 
       group_by(sub_area,division,year,taxon) %>% 
       summarise(div_mcp = sum(mcp, na.rm= T),
                 .groups = "drop")
@@ -309,29 +309,29 @@ read_dbem <- function(taxon){
 test_stocks <-
   data.frame(
   taxon = c(
-    rep(600118,4), # mackrel
-    rep(600030,5), #hake HKE_5b_6_7_12_14
-    rep(600024,3), # herring HER_2ª_4_7D 
-    rep(601381,3), # hadock HAD_6B_12_14
-    rep(600069,2), # Cod COD7XAD34
+    rep(600118,5), # mackrel 8C_9_10
+    rep(600030,15), #hake HKE_5b_6_7_12_14
+    rep(600024,5), # herring HER_2ª_4_7D 
+    rep(601381,7), # hadock HAD_6B_12_14
+    rep(600069,15), # Cod COD7XAD34
     rep(600525,2), # Solea SOL_2ª_4
     600066 # Anchovie ANE_8
           ),
   sub_area = c(
-    8,9,10,34.1, #mac
-    5,6,7,12,14, #hake
-    2,4,7, # herr
-    6,12,14, #had
-    7,34.1, # Cod
+    8,9,9,10,34.1, #mac
+    c(5,6,6,rep(7,8),rep(12,3),14), # hake
+    2,4,4,4,7, # herr
+    c(6,rep(12,3),rep(14,3)), #had
+    c(rep(7,7),rep(8,4),9,9,10,4.1), # Cod
     2,4, #Sol
     8 # ancho
     ),
-  division_keep = c(
-    rep("8c",4), #mac
-    rep("5b",5),#hake
-    rep("7d",3), # herr
-    rep("6b",3), # had
-    c("7a","7d"), # cod NOT IN THESE AREAS
+  division = c(
+    c("c","a","b","a",4.1),
+    c("b","a","b",letters[1:8],letters[1:3],"b"), # hake 
+    c("a","a","b","c","d"), # herr
+    c("b",letters[1:3],letters[1:3]), # had
+    c(letters[2:8],letters[1:4],"a","b","a",4.1), # cod 
     c(NA,NA), # sol
     NA #ancho
   )
@@ -350,8 +350,6 @@ project_spp <- my_path("D","Species","species_analyzed.csv", read = T) %>%
 spp_data <- bind_rows(
   lapply(project_spp$taxon_key, read_dbem)
 )
-
-# 18 million
 
 # Lon lat DBEM
 Lon_lat_grid <- my_path("G", "Spatial/DBEM","Lon_Lat_DBEM.txt", read = T, header = F)
@@ -379,6 +377,11 @@ stock_data <- test_stocks %>%
   filter(keep_me == "yes",
          taxon != 600525) %>%
   select(taxon:div_mcp,-division_keep)
+
+
+stock_data <- spp_data %>%
+  right_join(test_stocks,
+            by = c("taxon","sub_area","division")) 
 
 ```
 
@@ -477,7 +480,8 @@ regional_df <- stock_data %>%
             by = c("year","taxon")
             ) %>% 
   mutate(
-    per = (div_mcp/total_mcp)*100
+    per = (div_mcp/total_mcp)*100,
+    sub_a_div = paste(sub_area,division,sep = ".")
   )
 
 
@@ -485,34 +489,51 @@ head(regional_df,20)
 
 ```
 
-### Historical trends
+### Historical trends (area)
 
 ```{r}
 
-ggplot(regional_df) +
-  geom_line(
-    aes(
-      x = as.numeric(year),
-      y = per,
-      color = division
-      )
-  ) +
-  geom_vline(xintercept = 1973) +
-  facet_wrap(~taxon,
-             ncol = 3)
-
-
-ggplot(regional_df) +
+ ggplot(regional_df) +
   geom_area(
     aes(
       x = as.numeric(year),
       y = per,
-      fill = division
+      fill = sub_a_div
       )
   ) +
   geom_vline(xintercept = 1973) +
   facet_wrap(~taxon,
-             ncol = 3)
+             ncol = 3,
+             scale = "free")
+
+
+ggsave(my_path("R","partial","historic_proportion.png"),
+       last_plot(),
+       width = 12)
+
+```
+
+### Historical line (area)
+
+```{r}
+
+ ggplot(regional_df) +
+  geom_line(
+    aes(
+      x = as.numeric(year),
+      y = per,
+      color = sub_a_div
+      )
+  ) +
+  geom_vline(xintercept = 1973) +
+  facet_wrap(~taxon,
+             ncol = 3,
+             scale = "free")
+
+
+ggsave(my_path("R","partial","historic_proportion_line.png"),
+       last_plot(),
+       width = 12)
 
 ```
 
@@ -539,12 +560,13 @@ relative_chng <- regional_df %>%
   )
 
 
-p <- ggplot(relative_chng) +
+
+ggplot(relative_chng) +
   geom_line(
     aes(
       x = as.numeric(year),
       y = per_chg,
-      color = division
+      color = sub_a_div
       )
   ) +
   geom_hline(yintercept = 1) +
@@ -585,7 +607,7 @@ ggplot(relative_chng) +
     aes(
       x = as.numeric(year),
       y = RMean,
-      color = division
+      color = sub_a_div
       )
   ) +
   geom_hline(yintercept = 1) +
@@ -668,12 +690,54 @@ relative %>%
 
 ```
 
+
+### Proportion per period
+
+```{r regional_map, eval = T, echo = F}
+
+period_prop <- regional_df %>% 
+  mutate(
+    period = ifelse(year %in% seq(1973,1978,1),"A_reference",
+      ifelse(year %in% seq(2020,2040,1),"AA_med",
+                           ifelse(year %in% seq(2080,2100,1),"AAA_end",
+                                  NA
+                           )
+                    )
+    )
+  ) %>% 
+  filter(!is.na(period)) %>% 
+  group_by(sub_area,division, period,taxon) %>% 
+  summarise(mean_prop = mean(per,na.rm = T)) %>% 
+  mutate(sub_are = as.character(sub_area))
+
+
+
+reg_map <- project_shp %>% 
+  left_join(period_prop,
+            by = c("sub_are","division")) %>% 
+  filter(!is.na(taxon)) %>% 
+  ggplot() +
+  geom_sf(
+    aes(
+      fill = log10(mean_prop)
+    )
+  ) +
+  facet_wrap(~taxon+period,
+             ncol = 6) +
+  viridis::scale_fill_viridis()
+
+
+ggsave(my_path("R","partial","regional_map_prop_log.png"),
+       reg_map,
+       width = 12)
+
+```
+
 ### Relative change Mapping
 
 ```{r regional_map, eval = T, echo = F}
 
-relative_chng <- 
-  regional_df %>% 
+relative_chng <-  regional_df %>% 
   mutate(
     period = ifelse(year %in% seq(2020,2040,1),"AA_med",
                            ifelse(year %in% seq(2080,2100,1),"AAA_end",
@@ -682,7 +746,7 @@ relative_chng <-
                     )
   ) %>% 
   filter(!is.na(period)) %>% 
-  group_by(division, period,taxon) %>% 
+  group_by(sub_area,division, period,taxon) %>% 
   summarise(mean_mcp = mean(per,na.rm = T)) %>% 
   left_join(reference) %>% 
   mutate(per_chg = ifelse(ref_mcp == 0 & mean_mcp == 0, 0, # If for no change than 0
@@ -695,11 +759,14 @@ relative_chng <-
          plot_per_change = ifelse(per_chg > 100,100,
                                   ifelse(per_chg < -100,-100,
                                   per_chg)
-         )
+         ),
+         sub_are = as.character(sub_area)
          )
 
 reg_map <- project_shp %>% 
-  left_join(relative_chng) %>% 
+  left_join(relative_chng,
+            by = c("sub_are","division")) %>% 
+  filter(!is.na(taxon)) %>% 
   ggplot() +
   geom_sf(
     aes(
@@ -707,7 +774,7 @@ reg_map <- project_shp %>%
     )
   ) +
   facet_wrap(~period+taxon,
-             ncol = 6) +
+             nrow = 2) +
   scale_fill_gradient2() +
   scale_color_gradient2()
 
