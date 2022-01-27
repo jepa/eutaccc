@@ -265,10 +265,14 @@ Right now doing analysis at the species level
 eu_grid <- my_path("D","Spatial","eu_grid.csv", read = T) %>% 
   distinct(index,sub_area,division,.keep_all = T)
 
-read_dbem <- function(taxon){
+# taxon <- 601278
+# esm = "GFDL85"
+
+read_dbem <- function(taxon,esm){
   
   file_name <- paste0(taxon,"MCP.RData")
-  read_me <- my_path("G","cimip6/DBEM_outputs/C6GFDL85F1_5_t2", name = file_name)
+  esm_name <- paste0("cimip6/DBEM_outputs/C6",esm,"F1_t2")
+  read_me <- my_path("G",esm_name, name = file_name)
   
   if(file.exists(read_me) == F){
     print("no data for that spp. Bruh!")
@@ -283,11 +287,15 @@ read_dbem <- function(taxon){
       as.data.frame() %>% 
       rowid_to_column("index") %>% 
       gather("year","mcp",2:151) %>% 
-      mutate(taxon = taxon) %>% 
-      # filter(index %in% eu_grid$index) %>% 
-      left_join(eu_grid) %>% 
-      # filter(division == 34) %>% 
-      group_by(sub_area,division,year,taxon) %>% 
+      left_join(eu_grid,
+                by = "index") %>% 
+      mutate(remove_me = ifelse(is.na(sub_area) & is.na(division) & is.na(sub_division), "yes","no")) %>% 
+      filter(remove_me == "yes") %>% 
+      mutate(taxon = taxon,
+             esm = esm,
+             rcp = ifelse(str_detect(esm_name,"85"),"rcp85","rcp26")
+             ) %>% 
+      group_by(sub_area,division,year,taxon,esm,rcp) %>% 
       summarise(div_mcp = sum(mcp, na.rm= T),
                 .groups = "drop")
   }
@@ -296,7 +304,6 @@ read_dbem <- function(taxon){
   
 }
 
-# taxon <- 600069
 
 ```
 
@@ -308,6 +315,8 @@ Shiny app https://clock-espana.shinyapps.io/EUTAC/
 Cod COD_2A_3A_4 UK  approximately 40 % of TAC and political
 Horse mackerel JAX_9 Biggest TAC Portugal worth over 70% of revenue
 Plaice 2A_4 Important economically for DEN approx. 20% TAC and overall plaice contributes to 20% of total fish revenue
+
+
 
 ```{r}
 
@@ -374,13 +383,27 @@ project_spp <- my_path("D","Species","species_analyzed.csv", read = T) %>%
 
 
 # DBEM results for one spp
-# spp_data <- read_dbem(taxon = project_spp$taxon_key[1])
+# spp_data <- read_dbem(taxon = project_spp$taxon_key[1],esm = "GFDL26")
+
+esms <- c("GFDL26","GFDL85","IPSL26","IPSL85","MPI26","MPI85","UKESM26","UKESM85","CNRM85","CNRM26")
 
 # DBEM results for multiple spp
+
+tet <- function(x){
+   
 spp_data <- bind_rows(
-  lapply(project_spp$taxon_key, read_dbem)
+  lapply(project_spp$taxon_key, read_dbem, esm = x)
 ) %>% 
   filter(!is.na(sub_area))
+
+}
+
+ # x <- tet(esms[1])
+ 
+spp_data <- bind_rows(lapply(esms[1:2], tet))
+
+write_csv(spp_data,my_path("R",name = "spp_dbem_data.csv"))
+
 
 # Lon lat DBEM
 Lon_lat_grid <- my_path("G", "Spatial/DBEM","Lon_Lat_DBEM.txt", read = T, header = F)
