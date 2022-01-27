@@ -290,7 +290,7 @@ read_dbem <- function(taxon,esm){
       left_join(eu_grid,
                 by = "index") %>% 
       mutate(remove_me = ifelse(is.na(sub_area) & is.na(division) & is.na(sub_division), "yes","no")) %>% 
-      filter(remove_me == "yes") %>% 
+      filter(remove_me == "no") %>% 
       mutate(taxon = taxon,
              esm = esm,
              rcp = ifelse(str_detect(esm_name,"85"),"rcp85","rcp26")
@@ -389,10 +389,10 @@ esms <- c("GFDL26","GFDL85","IPSL26","IPSL85","MPI26","MPI85","UKESM26","UKESM85
 
 # DBEM results for multiple spp
 
-tet <- function(x){
+tet <- function(esm, taxon_list){
    
 spp_data <- bind_rows(
-  lapply(project_spp$taxon_key, read_dbem, esm = x)
+  lapply(taxon_list, read_dbem, esm = esm)
 ) %>% 
   filter(!is.na(sub_area))
 
@@ -400,9 +400,10 @@ spp_data <- bind_rows(
 
  # x <- tet(esms[1])
  
-spp_data <- bind_rows(lapply(esms[1:2], tet))
+spp_data <- bind_rows(lapply(esms, tet, taxon_list = test_stocks$taxon_key))
 
-write_csv(spp_data,my_path("R",name = "spp_dbem_data.csv"))
+
+write_csv(x,my_path("R",name = "spp_dbem_data.csv"))
 
 
 # Lon lat DBEM
