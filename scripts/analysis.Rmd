@@ -43,7 +43,7 @@ my_lib(packages)
 sf::sf_use_s2(use_s2 = FALSE)
 
 # data_path <- "../data"
-data_path <- my_path("D")
+# data_path <- my_path("D")
 ```
 
 # Methods
@@ -385,25 +385,28 @@ project_spp <- my_path("D","Species","species_analyzed.csv", read = T) %>%
 # DBEM results for one spp
 # spp_data <- read_dbem(taxon = project_spp$taxon_key[1],esm = "GFDL26")
 
-esms <- c("GFDL26","GFDL85","IPSL26","IPSL85","MPI26","MPI85","UKESM26","UKESM85","CNRM85","CNRM26")
+# esms <- c("GFDL26","GFDL85","IPSL26","IPSL85","MPI26","MPI85","UKESM26","UKESM85","CNRM85","CNRM26")
 
 # DBEM results for multiple spp
 
-tet <- function(esm, taxon_list){
-   
-spp_data <- bind_rows(
-  lapply(taxon_list, read_dbem, esm = esm)
-) %>% 
-  filter(!is.na(sub_area))
-
-}
+# tet <- function(esm, taxon_list){
+#    
+# spp_data <- bind_rows(
+#   lapply(taxon_list, read_dbem, esm = esm)
+# ) %>% 
+#   filter(!is.na(sub_area))
+# 
+# }
 
  # x <- tet(esms[1])
  
-spp_data <- bind_rows(lapply(esms, tet, taxon_list = test_stocks$taxon_key))
+# spp_data <- bind_rows(lapply(esms, tet, taxon_list = test_stocks$taxon_key))
 
 
-write_csv(x,my_path("R",name = "spp_dbem_data.csv"))
+# write_csv(x,my_path("R",name = "spp_dbem_data.csv"))
+
+
+spp_data <- my_path("R",name = "spp_dbem_data.csv", read = T, header = T)
 
 
 # Lon lat DBEM
@@ -412,14 +415,16 @@ colnames(Lon_lat_grid) <- c("index","lon","lat")
 
 # Load project's sf
 project_shp <- st_read(my_path("D","Spatial/project_sf","project_sf.shp")) %>% 
-  rename(division = divisin)
+  rename(division = divisin) %>% 
+  st_simplify(preserveTopology = TRUE, dTolerance = 10000) #0.1 for
 
 
 # Subset data for specific stocks/regions
 
-stock_data <- spp_data %>%
-  right_join(test_stocks,
-            by = c("taxon","sub_area","division")) 
+stock_data <- test_stocks %>%
+  right_join(spp_data,
+            by = c("taxon","sub_area","division")) %>% 
+  filter(!is.na(stock))
 
 
 # Check for NAs
@@ -427,6 +432,8 @@ stock_data <- spp_data %>%
 stock_data %>% 
   filter(is.na(div_mcp)) %>% 
   View()
+
+stock_data
 
 ```
 
@@ -467,7 +474,8 @@ temporal_df <- stock_data %>%
     )
   ) %>% 
   filter(!is.na(period)) %>% 
-  group_by(division,taxon, period) %>% 
+  group_by(sub_area,stock, period, esm, rcp) %>% 
+  # Mean period (20 years)
   summarise(mean_mcp = mean(div_mcp,na.rm = T)) %>% 
   spread(period,mean_mcp) %>% 
   gather("future","mcp",AA_med:AAA_end) %>% 
@@ -481,10 +489,32 @@ temporal_df <- stock_data %>%
                            ifelse(per_chg < -100,-100,
                                   per_chg)
   )
-  )
-  
+  ) %>%
+  # Summarize esms rcps
+  group_by(sub_area,stock,rcp,future) %>% 
+  summarise_if(is.numeric,c("mean" = mean,"sd" = sd),na.rm=T) %>% 
+  select(sub_area,stock,rcp, time_period = future, per_chg_mean, per_chg_sd) %>% 
+  mutate(sub_are = as.character(sub_area))
+
+
+  # write_csv(temporal_df,my_path("R", name = "temporal_chng.csv"))
 
 head(temporal_df,20)
+
+
+x <- project_shp %>% 
+  left_join(temporal_df) %>% 
+  filter(
+    rcp == "rcp85"
+  ) %>% 
+  ggplot() +
+  geom_sf(
+    aes(fill=per_chg_mean)
+  ) +
+  facet_wrap(~stock+time_period, ncol = 6) +
+  scale_fill_gradient2()
+
+ggsave(plot = x,filename = "../Results/Parital/time_change_85.jpg")
 
 ```
 
@@ -498,12 +528,12 @@ temp_map <- project_shp %>%
       fill = plot_per_change
     )
   ) +
-  facet_wrap(~future, nrow = 1)+
+  # facet_wrap(~future, nrow = 1)+
   scale_fill_gradient2() +
   scale_color_gradient2()
 
 
-ggsave(my_path("R","partial","temporal_map.png"),
+ggsave(my_path("R","partial","all_esms_temporal_map.png"),
        temp_map,
        width = 12)
 
@@ -516,21 +546,26 @@ ggsave(my_path("R","partial","temporal_map.png"),
 
 total_spp <- stock_data %>% 
   filter(!is.na(division)) %>% 
-  group_by(year,taxon,stock) %>% 
+  group_by(year,stock,esm,rcp) %>% 
   summarise(total_mcp = sum(div_mcp,na.rm=T))
   
   
 regional_df <- stock_data %>%
   filter(!is.na(division)) %>% 
+  group_by(year,stock,division,esm,rcp) %>% 
+  summarise_if(is.numeric,sum) %>% 
   left_join(total_spp,
-            by = c("year","taxon","stock")
+            by = c("year","stock","esm","rcp")
             ) %>% 
   mutate(
     per = (div_mcp/total_mcp)*100,
     sub_a_div = paste(sub_area,division,sep = ".")
   ) %>% 
-  group_by(sub_a_div,stock) %>% 
-  mutate(RMean = zoo::rollmean(x = per, 
+  # Mean ESMs
+  group_by(stock,year,division,rcp) %>% 
+  summarise(mean_per = mean(per)) %>% 
+  group_by(division,stock,rcp) %>% 
+  mutate(RMean = zoo::rollmean(x = mean_per, 
                             10, 
                             align = "left", 
                             fill = NA,
@@ -540,30 +575,39 @@ regional_df <- stock_data %>%
 
 head(regional_df,20)
 
+# Checking it makes sense (yes it does!)
+
+# regional_df %>%
+#   filter(year == 2000) %>%
+#   group_by(stock) %>%
+#   summarise(sum(mean_per)) %>%
+#   View()
+
 ```
 
 ### Historical trends (area plot) by stock
 
 ```{r}
-regional_df %>% 
+
+x <- regional_df %>%
   filter(year >= 1960) %>% 
  ggplot() +
   geom_area(
     aes(
       x = as.numeric(year),
       y = RMean,
-      fill = sub_a_div
+      fill = division
       )
   ) +
   geom_vline(xintercept = 1973) +
   viridis::scale_fill_viridis(discrete = T) +
-  facet_wrap(~stock,
-             ncol = 3,
-             scale = "free")
+  facet_wrap(~stock +rcp,
+             ncol = 6,
+             scale = "free_y")
 
 
-ggsave(my_path("R","partial","historic_pro_stock.png"),
-       last_plot(),
+ggsave(filename = "../Results/Parital/division_proportion_area.jpg",
+       plot = x,
        width = 12)
 
 ```
@@ -602,7 +646,7 @@ ggsave(my_path("R","partial","historic_prop_sub_div_rmean.png"),
 
 ```{r}
 
-regional_df %>% 
+x <- regional_df %>% 
 filter(year >= 1960,
          RMean > 0,
          !is.na(RMean)
@@ -612,7 +656,8 @@ filter(year >= 1960,
     aes(
       x = as.numeric(year),
       y = RMean,
-      color = sub_a_div
+      color = division,
+      linetype = rcp
       )
   ) +
   geom_vline(xintercept = 1973) +
@@ -622,8 +667,8 @@ filter(year >= 1960,
              scale = "free")
 
 
-ggsave(my_path("R","partial","historic_proportion_line_rmean.png"),
-       last_plot(),
+ggsave(filename = "../Results/Parital/division_proportion_line.jpg",
+       plot = x,
        width = 12)
 
 ```
@@ -631,146 +676,102 @@ ggsave(my_path("R","partial","historic_proportion_line_rmean.png"),
 ### Relative change
 
 
-```{r changeline, eval = T, echo = F}
+```{r relative_chng_data, eval = T, echo = F}
 
 reference <- regional_df %>% 
   filter(year >= 1973 & year <= 1978) %>% 
   # View()
-  group_by(sub_a_div,taxon,stock) %>% 
-  summarise(ref_mcp = mean(per,na.rm = T))
+  group_by(division,stock,rcp) %>% 
+  summarise(ref_mcp = mean(mean_per,na.rm = T))
 
 
 relative_chng <- regional_df %>% 
-  filter(year >= 1978) %>%
+  mutate(
+    period = ifelse(year %in% seq(2020,2040,1),"AA_med",
+                           ifelse(year %in% seq(2080,2100,1),"AAA_end",
+                                  NA
+                           )
+                    )
+    ) %>% 
+  filter(!is.na(period)) %>% 
+  group_by(stock,division,rcp,period) %>% 
+  summarise(mean_period = mean(mean_per)) %>% 
   left_join(reference,
-            by = c("taxon", "stock", "sub_a_div")
-            ) %>% 
-  # View()
-  mutate(per_chg = ifelse(per == 0 & ref_mcp == 0, 0, # If for no change than 0
-                        ifelse(per == 0 & ref_mcp > 0, 1, # If changes from 0 to anything then 100
-                               ifelse(per > 0 & ref_mcp == 0, 1, # if there was no orginially and then it
-                               ((ref_mcp-per)/abs(ref_mcp))*100
+            by = c("stock", "division", "rcp")
+            ) %>%
+  mutate(
+    per_chg = ifelse(mean_period == 0 & ref_mcp == 0, 0, # If for no change than 0
+                        ifelse(mean_period == 0 & ref_mcp > 0, 1, # If changes from 0 to anything then 100
+                               ifelse(mean_period > 0 & ref_mcp == 0, 1, # if there was no orginially and then it
+                               ((ref_mcp-mean_period)/abs(ref_mcp))*100
                         )
                         )
             )
-  ) #%>% 
-  # mutate(
-  #   per_chg = ifelse(per_chg > 100,100,
-  #                    ifelse(per_chg < -100,-100,per_chg)
-  # )
-  # )
+  ) %>% 
+  mutate(
+    per_chg = ifelse(per_chg > 100,100,
+                     ifelse(per_chg < -100,-100,per_chg)
+  )
+  )
 
-
-relative_chng %>% 
-  # filter(taxon == 600030) %>% 
-  # View()
-ggplot() +
-  geom_line(
-    aes(
-      x = as.numeric(year),
-      y = per_chg,
-      color = sub_a_div
-      )
-  ) +
-  geom_hline(yintercept = 1) +
-  viridis::scale_color_viridis(discrete = T) +
-  facet_wrap(~taxon,
-             ncol = 3,
-             scales = "free")
-
-
-# plotly::ggplotly(p)
-
-p
 ```
 
-### Relative change (Run 10)
+#### Period change map
 
 ```{r}
 
-relative_chng <- regional_df %>% 
-  filter(year >= 1978) %>% 
-  left_join(reference) %>% 
-  mutate(per_chg = ifelse(per == 0 & ref_mcp == 0, 0, # If for no change than 0
-                        ifelse(per == 0 & ref_mcp > 0, 1, # If changes from 0 to anything then 100
-                               ifelse(per > 0 & ref_mcp == 0, 1, # if there was no orginially and then it
-                               ((ref_mcp-per)/abs(ref_mcp))*100
-                        )
-                        )
-            )
-  ) %>% 
-  group_by(sub_a_div,taxon) %>% 
-  mutate(RMean = zoo::rollmean(x = per_chg, 
-                            10,
-                            fill = "left",
-                            na.rm=T)
-    )
-
-
-ggplot(relative_chng) +
-  geom_line(
-    aes(
-      x = as.numeric(year),
-      y = RMean,
-      color = sub_a_div
-      )
-  ) +
-  geom_hline(yintercept = 1) +
-  facet_wrap(~taxon,
-             ncol = 3,
-             scales = "free")
-
-```
-
-### Relative Map per period
-
-```{r regional_map, eval = T, echo = F}
-
-relative <- regional_df %>% 
-  mutate(
-    period = ifelse(year %in% seq(1973,1978,1),"A_ref",
-                    ifelse(year %in% seq(2020,2040,1),"AA_med",
-                           ifelse(year %in% seq(2080,2100,1),"AAA_end",NA
-                           )
-                    )
-    )
-  ) %>% 
-  filter(!is.na(period)) %>% 
-  group_by(sub_are = as.character(sub_area),division = division, period,taxon,stock) %>% 
-  summarise(per_mcp = mean(per,na.rm = T))
-
-# Mapping
-
-for(i in 1:length(unique(relative$stock))){
-
-  stocks <- unique(stock_data$stock)[i]
-  
-reg_map <- project_shp %>% 
-  left_join(relative,
-             by = c("sub_are","division")
+period_map <- project_shp %>% 
+  left_join(relative_chng,
+             by = c("division")
              ) %>% 
-    filter(stock == stocks) %>% 
+  filter(!is.na(per_chg),
+         rcp == "rcp26") %>% 
+  # as.data.frame() %>% 
+  # select(-geometry) %>% 
+  # View()
   ggplot() +
   geom_sf(
     aes(
-      fill = per_mcp
+      fill = per_chg
     )
   ) +
-  facet_wrap(~period,
-             ncol = 9) +
-  viridis::scale_fill_viridis() 
-  
-  
+  facet_wrap(~stock+period,
+             ncol = 6) +
+  scale_fill_gradient2() +
+  scale_color_gradient2()
 
-  name <- paste0(my_path("R","partial"),"AA_",stocks,"_regional_map_per.png")
 
-ggsave(filename = name,
-        plot = reg_map,
+
+ggsave(filename = "../Results/Parital/division_change_map_26.jpg",
+       plot = period_map,
        width = 12)
 
-}
+```
+
+
+#### Periods plots
+
+
+```{r}
+
+periods_proportion <- regional_df %>% 
+  mutate(
+    period = ifelse(year %in% seq(1973,1978,1),"A_early",
+                    ifelse(year %in% seq(2020,2040,1),"AA_med",
+                           ifelse(year %in% seq(2080,2100,1),"AAA_end",
+                                  NA
+                           )
+                    )
+    )
+    ) %>% 
+  filter(!is.na(period)) %>% 
+  group_by(stock,division,rcp,period) %>% 
+  summarise(mean_period = mean(mean_per)) 
+
+
 
 ```
+
 
 ### Relative bar per period
 
